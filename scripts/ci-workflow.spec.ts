@@ -130,6 +130,8 @@ describe('CI workflow', () => {
       expect(job['runs-on']).toContain('ubuntu-latest')
       expect(job.env).toMatchObject(expectedEnv)
     }
+    expect(node24Coverage['continue-on-error']).toBe(`\${{ ${forkRepositoryGuard} }}`)
+    expect(node24Consumers['continue-on-error']).toBe(`\${{ ${forkRepositoryGuard} }}`)
     expect(aggregate['runs-on']).toContain('DSH_CI_FAILOVER_LINUX')
     expect(aggregate['runs-on']).not.toContain('DSH_CI_FAILOVER_WINDOWS')
     expect(aggregate['runs-on']).toContain('vm-backup')
@@ -288,6 +290,37 @@ describe('DeepSeek e2e workflow', () => {
       run: 'bash scripts/prepare-ci-bubblewrap.sh',
     })
     expect(JSON.stringify(steps)).not.toContain('apt-get')
+  })
+})
+
+describe('documentation deployment workflow', () => {
+  it('bounds the Pages build and deployment with least-privilege jobs', () => {
+    const workflow = loadWorkflow('.github/workflows/docs-pages.yml')
+    const build = workflowJob(workflow, 'build')
+    const deploy = workflowJob(workflow, 'deploy')
+
+    expect(build).toMatchObject({
+      'runs-on': 'ubuntu-latest',
+      'timeout-minutes': 20,
+      permissions: { contents: 'read', pages: 'read' },
+    })
+    expect(deploy).toMatchObject({
+      needs: 'build',
+      'runs-on': 'ubuntu-latest',
+      'timeout-minutes': 10,
+      permissions: { pages: 'write', 'id-token': 'write' },
+    })
+    expect(JSON.stringify(build.steps)).toContain('actions/upload-pages-artifact@v5')
+    expect(JSON.stringify(deploy.steps)).toContain('actions/deploy-pages@v5')
+  })
+})
+
+describe('sandbox workflow', () => {
+  it('keeps the official kernel matrix off personal-fork master pushes', () => {
+    const workflow = loadWorkflow('.github/workflows/sandbox.yml')
+    const sandbox = workflowJob(workflow, 'sandbox-e2e')
+
+    expect(sandbox.if).toBe(officialRepositoryGuard)
   })
 })
 
@@ -461,6 +494,7 @@ describe('Issue lifecycle workflow', () => {
     const lifecycleJob = workflowJob(lifecycle, 'lifecycle')
     const policy = loadWorkflow('.github/workflows/issue-policy.yml')
     const policyPullRequest = workflowEvent(policy, 'pull_request')
+    const policyJob = workflowJob(policy, 'policy')
 
     expect(lifecyclePullRequest.types).not.toContain('ready_for_review')
     expect(lifecyclePullRequest.types).toContain('review_requested')
@@ -469,6 +503,7 @@ describe('Issue lifecycle workflow', () => {
       "${{ github.repository == 'deepseek-ai/deepseek-harness' && (github.event_name != 'pull_request_review' || (github.event.action == 'submitted' && github.event.review.state == 'changes_requested')) }}",
     )
     expect(policyPullRequest.types).toContain('ready_for_review')
+    expect(policyJob.if).toBe(officialRepositoryGuard)
   })
 })
 

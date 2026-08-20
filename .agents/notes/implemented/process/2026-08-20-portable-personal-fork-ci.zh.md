@@ -12,6 +12,8 @@ Status: implemented
 
 现有 workflow 继续作为 CI 和文档部署的唯一事实来源。当 `github.repository` 不是 `deepseek-ai/deepseek-harness` 时，Pull Request 任务选择 GitHub 托管的标准 Linux 和 Windows runner；官方仓库继续使用大型 runner 与故障切换选择器。自托管备用演练与组织 runner benchmark 只在官方仓库执行。
 
+覆盖率与快照/产物 lane 在 fork 中仍会执行，但只提供 advisory（参考性）证据，因为 GitHub 托管镜像暴露的可选工具和浏览器环境与官方 runner 池不同。fork 的稳定 verdict（裁决）仍由静态检查、受支持 Node 兼容性、Python SDK/runtime 打包、Windows Wine 和包演练阻断。昂贵且仅在 master 上运行的内核沙箱矩阵仍是官方仓库参考；fork 不会消耗 macOS 与 Arm runner 时间来复现这项基础设施证明。
+
 真实 API E2E 默认只在官方仓库运行。fork 必须设置仓库变量 `DSH_REAL_API_E2E_ENABLED=true` 并配置 `DEEPSEEK_API_KEY_EXTERNAL`，任务才可运行。workflow 继续使用 `pull_request`，绝不使用 `pull_request_target`，因此来自其他 fork 的 Pull Request 无法取得仓库 secret。
 
 每个 npm 和 PyPI 发布任务除要求手动发布输入外，还要求 `github.repository == 'deepseek-ai/deepseek-harness'`。fork 可以保留无密钥的打包和产物演练，但无法进入官方发布任务。Issue 生命周期自动化同样带有官方仓库保护，因为其 GitHub App 安装只属于该仓库。可移植的 Pages workflow 继续作为 fork 的部署路径。
@@ -26,7 +28,7 @@ Status: implemented
 
 ## 后果
 
-个人 fork 无需访问 DeepSeek 基础设施，即可在 GitHub 托管 runner 上执行上游 Pull Request 检查，并通过 GitHub Pages 部署文档。标准 runner 的容量低于官方池，因此 fork 检查可能耗时更长。真实 Provider 测试保持显式启用并依赖 secret。发布与 Issue 生命周期任务继续不可用，除非下游有意用自己的发行身份和 workflow 保护替换官方设计。
+个人 fork 无需访问 DeepSeek 基础设施，即可在 GitHub 托管 runner 上运行可移植的 Pull Request verdict，并通过 GitHub Pages 部署文档。参考性覆盖率和快照 lane 仍会暴露上游漂移，但官方 runner 假设不会成为 fork 合并要求。真实 Provider 测试仍为显式启用且由 secret 支撑。除非下游有意用自己的设计替换官方身份、环境和 workflow guard，否则发布、Issue 治理与内核沙箱参考仍不可用。
 
 ## 验证
 

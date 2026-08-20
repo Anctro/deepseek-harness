@@ -12,6 +12,8 @@ The official repository uses organization-scoped larger runners, private self-ho
 
 The existing workflows remain the source of truth for CI and documentation deployment. Pull-request jobs select standard GitHub-hosted Linux and Windows runners when `github.repository` is not `deepseek-ai/deepseek-harness`; the official repository retains its larger-runner and failover selectors. Self-hosted standby drills and organization runner benchmarks execute only in the official repository.
 
+The coverage and snapshot/artifact lanes still execute in forks, but are advisory there because GitHub-hosted images expose a different optional-tool and browser environment from the official pools. The stable fork verdict remains blocking on static checks, supported Node compatibility, Python SDK/runtime packaging, Windows Wine, and package rehearsals. The expensive master-only kernel sandbox matrix remains an official-repository reference; forks do not spend macOS and Arm runner time reproducing that infrastructure proof.
+
 Real-API E2E runs in the official repository by default. A fork must set the repository variable `DSH_REAL_API_E2E_ENABLED=true` and configure `DEEPSEEK_API_KEY_EXTERNAL` before the job can run. The workflow continues to use `pull_request`, never `pull_request_target`, so forked pull requests cannot receive repository secrets.
 
 Every npm and PyPI publish job requires `github.repository == 'deepseek-ai/deepseek-harness'` in addition to its manual publish input. Forks may retain keyless package and artifact rehearsals, but cannot enter the official publication jobs. Issue lifecycle automation has the same official-repository guard because its GitHub App installation is repository-specific. The portable Pages workflow remains the fork's deployment path.
@@ -26,7 +28,7 @@ Every npm and PyPI publish job requires `github.repository == 'deepseek-ai/deeps
 
 ## Consequences
 
-Personal forks can run the upstream pull-request checks on GitHub-hosted runners and deploy documentation through GitHub Pages without access to DeepSeek infrastructure. These runners have less capacity than the official pools, so fork checks may take longer. Real-provider tests remain opt-in and secret-backed. Publication and issue lifecycle jobs remain unavailable until a downstream intentionally replaces the official identities and workflow guards with its own distribution design.
+Personal forks can run the portable pull-request verdict on GitHub-hosted runners and deploy documentation through GitHub Pages without access to DeepSeek infrastructure. Advisory coverage and snapshot lanes still expose upstream drift without making official-runner assumptions a fork merge requirement. Real-provider tests remain opt-in and secret-backed. Publication, issue governance, and the kernel sandbox reference remain unavailable until a downstream intentionally replaces the official identities, environments, and workflow guards with its own design.
 
 ## Verification
 
