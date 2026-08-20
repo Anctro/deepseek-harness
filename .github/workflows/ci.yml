@@ -119,6 +119,10 @@ jobs:
 
   node-24-coverage:
     if: github.event_name == 'pull_request'
+    # Public images expose a different optional-tool surface (notably pwsh)
+    # than the official pool. Keep this evidence visible in forks without
+    # making upstream environment drift block their portable verdict.
+    continue-on-error: ${{ github.repository != 'deepseek-ai/deepseek-harness' }}
     runs-on: >-
       ${{ github.repository != 'deepseek-ai/deepseek-harness'
           && 'ubuntu-latest'
@@ -183,6 +187,9 @@ jobs:
 
   node-24-consumers:
     if: github.event_name == 'pull_request'
+    # Snapshot goldens are owned by the official runner/browser environment.
+    # Forks still execute this lane as advisory evidence.
+    continue-on-error: ${{ github.repository != 'deepseek-ai/deepseek-harness' }}
     runs-on: >-
       ${{ github.repository != 'deepseek-ai/deepseek-harness'
           && 'ubuntu-latest'

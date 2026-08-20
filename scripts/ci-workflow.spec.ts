@@ -130,6 +130,8 @@ describe('CI workflow', () => {
       expect(job['runs-on']).toContain('ubuntu-latest')
       expect(job.env).toMatchObject(expectedEnv)
     }
+    expect(node24Coverage['continue-on-error']).toBe(`\${{ ${forkRepositoryGuard} }}`)
+    expect(node24Consumers['continue-on-error']).toBe(`\${{ ${forkRepositoryGuard} }}`)
     expect(aggregate['runs-on']).toContain('DSH_CI_FAILOVER_LINUX')
     expect(aggregate['runs-on']).not.toContain('DSH_CI_FAILOVER_WINDOWS')
     expect(aggregate['runs-on']).toContain('vm-backup')
@@ -310,6 +312,15 @@ describe('documentation deployment workflow', () => {
     })
     expect(JSON.stringify(build.steps)).toContain('actions/upload-pages-artifact@v5')
     expect(JSON.stringify(deploy.steps)).toContain('actions/deploy-pages@v5')
+  })
+})
+
+describe('sandbox workflow', () => {
+  it('keeps the official kernel matrix off personal-fork master pushes', () => {
+    const workflow = loadWorkflow('.github/workflows/sandbox.yml')
+    const sandbox = workflowJob(workflow, 'sandbox-e2e')
+
+    expect(sandbox.if).toBe(officialRepositoryGuard)
   })
 })
 
