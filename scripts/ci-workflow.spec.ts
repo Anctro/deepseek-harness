@@ -5,6 +5,9 @@ import { describe, expect, it } from 'vitest'
 
 const root = resolve(import.meta.dirname, '..')
 const runnerPrivatePnpmDestination = '${{ runner.temp }}/setup-pnpm'
+const officialRepositoryGuard = "github.repository == 'deepseek-ai/deepseek-harness'"
+const forkRepositoryGuard = "github.repository != 'deepseek-ai/deepseek-harness'"
+const forkConcurrency = (fork: string, official: string) => `\${{ ${forkRepositoryGuard} && '${fork}' || '${official}' }}`
 
 describe('CI workflow', () => {
   it('isolates every pnpm action setup destination per runner', () => {
@@ -70,10 +73,16 @@ describe('CI workflow', () => {
     expect(windowsNative['runs-on']).toContain('self-hosted')
     expect(windowsNative['runs-on']).toContain('dsh-win-ci')
     expect(windowsNative['runs-on']).toContain('dsh-windows-2025-16core')
+    expect(windowsNative['runs-on']).toContain(forkRepositoryGuard)
+    expect(windowsNative['runs-on']).toContain('windows-latest')
     expect(windowsNative.name).toBe('windows node 24 / native complete')
     expect(windowsNative.if).toBe("github.event_name == 'pull_request'")
     expect(windowsNative.env).toMatchObject({
+      DSH_COVERAGE_MAX_WORKERS: forkConcurrency('2', '6'),
+      DSH_COVERAGE_PARTITIONS: forkConcurrency('2', '8'),
       DSH_COVERAGE_TEST_TIMEOUT_MS: '30000',
+      DSH_GATE_CONCURRENCY: forkConcurrency('2', '4'),
+      DSH_PUBLINT_CONCURRENCY: forkConcurrency('2', '8'),
     })
     const nativeCommandSteps = (windowsNative.steps as unknown[]).filter((step): step is Record<string, unknown> & { run: string } => (
       isRecord(step) && typeof step.run === 'string'
@@ -85,7 +94,7 @@ describe('CI workflow', () => {
     expect(wineAptCache['runs-on']).toBe('ubuntu-latest')
 
     // serial-windows: master-only standby, self-hosted, non-blocking.
-    expect(serialWindows.if).toBe("github.event_name == 'push' && github.ref == 'refs/heads/master'")
+    expect(serialWindows.if).toBe(`${officialRepositoryGuard} && github.event_name == 'push' && github.ref == 'refs/heads/master'`)
     expect(serialWindows['runs-on']).toEqual(['self-hosted', 'dsh-win-ci', 'windows'])
     expect(serialWindows.name).toBe('serial / windows (self-hosted standby)')
 
@@ -97,15 +106,35 @@ describe('CI workflow', () => {
     // Linux failover is a separate switch: the three required Linux workers
     // and the verdict job resolve their pool through DSH_CI_FAILOVER_LINUX,
     // never the Windows switch.
-    for (const [jobName, job] of [['node-24', node24], ['node-24-coverage', node24Coverage], ['node-24-consumers', node24Consumers]] as const) {
+    const linuxJobs = [
+      ['node-24', node24, { DSH_GATE_CONCURRENCY: forkConcurrency('2', '8') }],
+      ['node-24-coverage', node24Coverage, {
+        DSH_COVERAGE_MAX_WORKERS: forkConcurrency('2', '6'),
+        DSH_COVERAGE_PARTITIONS: forkConcurrency('2', '4'),
+        DSH_GATE_CONCURRENCY: forkConcurrency('2', '3'),
+      }],
+      ['node-24-consumers', node24Consumers, {
+        DSH_GATE_CONCURRENCY: forkConcurrency('2', '8'),
+        DSH_OXLINT_THREADS: forkConcurrency('2', '8'),
+        DSH_PUBLINT_CONCURRENCY: forkConcurrency('2', '8'),
+        DSH_WEB_SNAPSHOT_WORKERS: forkConcurrency('2', '6'),
+        DSH_SNAPSHOT_MAX_CONCURRENCY: `\${{ ${forkRepositoryGuard} && '4' || vars.DSH_CI_FAILOVER_LINUX == 'selfhosted' && github.event.pull_request.user.login != 'dependabot[bot]' && '12' || '32' }}`,
+      }],
+    ] as const
+    for (const [jobName, job, expectedEnv] of linuxJobs) {
       expect(typeof job['runs-on']).toBe('string')
       expect(job['runs-on'], `${jobName} runs-on must use the Linux failover switch`).toContain('DSH_CI_FAILOVER_LINUX')
       expect(job['runs-on'], `${jobName} runs-on must not use the Windows failover switch`).not.toContain('DSH_CI_FAILOVER_WINDOWS')
       expect(job['runs-on']).toContain('vm-backup')
+      expect(job['runs-on']).toContain(forkRepositoryGuard)
+      expect(job['runs-on']).toContain('ubuntu-latest')
+      expect(job.env).toMatchObject(expectedEnv)
     }
     expect(aggregate['runs-on']).toContain('DSH_CI_FAILOVER_LINUX')
     expect(aggregate['runs-on']).not.toContain('DSH_CI_FAILOVER_WINDOWS')
     expect(aggregate['runs-on']).toContain('vm-backup')
+    expect(aggregate['runs-on']).toContain(forkRepositoryGuard)
+    expect(aggregate['runs-on']).toContain('ubuntu-latest')
   })
 
   it('exempts push from cancellation, so one master merge does not cancel the running drill', () => {
@@ -132,7 +161,7 @@ describe('CI workflow', () => {
       if (!isRecord(job)) throw new TypeError(`${name} must be defined`)
       expect(job.concurrency).toBeUndefined()
       // Both stay master-push-only; that is what makes the push carve-out safe.
-      expect(job.if).toBe("github.event_name == 'push' && github.ref == 'refs/heads/master'")
+      expect(job.if).toBe(`${officialRepositoryGuard} && github.event_name == 'push' && github.ref == 'refs/heads/master'`)
     }
 
     // What bounds the cost of exempting push: a master push may only carry the
@@ -146,8 +175,8 @@ describe('CI workflow', () => {
     const NOT_PUSH_REACHABLE = new Set([
       "github.event_name == 'pull_request'",
       "always() && github.event_name == 'pull_request'",
-      "github.event_name == 'workflow_dispatch' && inputs.suite == 'larger-runner-benchmark'",
-      "github.event_name == 'workflow_dispatch' && inputs.suite == 'consolidated-runner-benchmark'",
+      `${officialRepositoryGuard} && github.event_name == 'workflow_dispatch' && inputs.suite == 'larger-runner-benchmark'`,
+      `${officialRepositoryGuard} && github.event_name == 'workflow_dispatch' && inputs.suite == 'consolidated-runner-benchmark'`,
     ])
     const pushReachable = Object.entries(workflow.jobs)
       .filter(([, job]) => {
@@ -239,6 +268,16 @@ describe('E2B e2e workflow', () => {
 })
 
 describe('DeepSeek e2e workflow', () => {
+  it('requires an explicit opt-in outside the official repository', () => {
+    const workflow = loadWorkflow('.github/workflows/e2e.yml')
+    const e2e = workflowJob(workflow, 'e2e')
+
+    expect(e2e.if).toBe(
+      `(${officialRepositoryGuard} || vars.DSH_REAL_API_E2E_ENABLED == 'true') && (github.event_name != 'pull_request' || !(github.event.pull_request.head.repo.full_name != github.repository || github.event.pull_request.user.login == 'dependabot[bot]'))`,
+    )
+    expect(JSON.stringify(workflow)).not.toContain('pull_request_target')
+  })
+
   it('prepares bubblewrap from the pinned payload without a package transaction', () => {
     const workflow = loadWorkflow('.github/workflows/e2e.yml')
     const e2e = workflowJob(workflow, 'e2e')
@@ -301,13 +340,13 @@ describe('Python release workflows', () => {
     expect(authorize.run).toContain('[ "$REPOSITORY" = "$PYPI_PUBLISHER_REPOSITORY" ]')
     expect(validateSteps).toContain('100000000')
     expect(publishRuntime).toMatchObject({
-      if: "github.event_name == 'workflow_dispatch' && inputs.publish",
+      if: `${officialRepositoryGuard} && github.event_name == 'workflow_dispatch' && inputs.publish`,
       needs: 'validate',
       environment: 'pypi-runtime',
       permissions: { contents: 'read', 'id-token': 'write' },
     })
     expect(publishSdk).toMatchObject({
-      if: "github.event_name == 'workflow_dispatch' && inputs.publish",
+      if: `${officialRepositoryGuard} && github.event_name == 'workflow_dispatch' && inputs.publish`,
       needs: ['validate', 'publish-runtime'],
       environment: 'pypi',
       permissions: { contents: 'read', 'id-token': 'write' },
@@ -399,6 +438,21 @@ describe('Python release workflows', () => {
   })
 })
 
+describe('npm release workflows', () => {
+  it('limits every registry publication job to the official repository', () => {
+    for (const path of [
+      '.github/workflows/release.yml',
+      '.github/workflows/release-vendor.yml',
+      '.github/workflows/landlock-run-release.yml',
+    ]) {
+      const workflow = loadWorkflow(path)
+      const publish = workflowJob(workflow, 'publish')
+
+      expect(publish.if, `${path} publish guard`).toBe(`${officialRepositoryGuard} && inputs.publish`)
+    }
+  })
+})
+
 describe('Issue lifecycle workflow', () => {
   it('uses explicit review handoff events without rerunning when a draft becomes ready', () => {
     const lifecycle = loadWorkflow('.github/workflows/issue-lifecycle.yml')
@@ -412,7 +466,7 @@ describe('Issue lifecycle workflow', () => {
     expect(lifecyclePullRequest.types).toContain('review_requested')
     expect(lifecycleReview.types).toEqual(['submitted'])
     expect(lifecycleJob.if).toBe(
-      "${{ github.event_name != 'pull_request_review' || (github.event.action == 'submitted' && github.event.review.state == 'changes_requested') }}",
+      "${{ github.repository == 'deepseek-ai/deepseek-harness' && (github.event_name != 'pull_request_review' || (github.event.action == 'submitted' && github.event.review.state == 'changes_requested')) }}",
     )
     expect(policyPullRequest.types).toContain('ready_for_review')
   })

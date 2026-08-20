@@ -55,11 +55,13 @@ jobs:
   e2e:
     runs-on: ubuntu-latest
     name: e2e
-    # Run on every trusted event. Skip untrusted PRs (forks + Dependabot) where
-    # the secret is withheld — they would otherwise hard-fail the preflight.
+    # The official repository runs every trusted event. A downstream fork must
+    # explicitly enable the live suite and provide its own secret. Untrusted
+    # PRs (external forks + Dependabot) remain skipped because GitHub withholds secrets.
     if: >-
-      github.event_name != 'pull_request'
-      || !(github.event.pull_request.head.repo.fork || github.event.pull_request.user.login == 'dependabot[bot]')
+      (github.repository == 'deepseek-ai/deepseek-harness' || vars.DSH_REAL_API_E2E_ENABLED == 'true')
+      && (github.event_name != 'pull_request'
+      || !(github.event.pull_request.head.repo.full_name != github.repository || github.event.pull_request.user.login == 'dependabot[bot]'))
     # Bounded file parallelism (DSH_E2E_MAX_WORKERS), 120s/test, retry 2. 45m
     # still bounds retry storms against a slow API while the happy path fans out.
     timeout-minutes: 45
