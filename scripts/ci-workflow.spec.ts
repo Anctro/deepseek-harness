@@ -291,6 +291,28 @@ describe('DeepSeek e2e workflow', () => {
   })
 })
 
+describe('documentation deployment workflow', () => {
+  it('bounds the Pages build and deployment with least-privilege jobs', () => {
+    const workflow = loadWorkflow('.github/workflows/docs-pages.yml')
+    const build = workflowJob(workflow, 'build')
+    const deploy = workflowJob(workflow, 'deploy')
+
+    expect(build).toMatchObject({
+      'runs-on': 'ubuntu-latest',
+      'timeout-minutes': 20,
+      permissions: { contents: 'read', pages: 'read' },
+    })
+    expect(deploy).toMatchObject({
+      needs: 'build',
+      'runs-on': 'ubuntu-latest',
+      'timeout-minutes': 10,
+      permissions: { pages: 'write', 'id-token': 'write' },
+    })
+    expect(JSON.stringify(build.steps)).toContain('actions/upload-pages-artifact@v5')
+    expect(JSON.stringify(deploy.steps)).toContain('actions/deploy-pages@v5')
+  })
+})
+
 describe('Python release workflows', () => {
   it('keeps complete wheel validation separate from protected public publication', () => {
     const workflow = loadWorkflow('.github/workflows/python-release.yml')
